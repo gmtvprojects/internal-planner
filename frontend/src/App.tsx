@@ -143,7 +143,6 @@ type CreateItemInput = {
 };
 
 const workspaceStateStorageKey = "toolz-workspace-state-v2";
-const authSessionStorageKey = "toolz-auth-session";
 const boardCollapsedStorageKey = "toolz-board-collapsed-projects";
 const backlogCollapsedStorageKey = "toolz-backlog-collapsed-projects";
 const deliveriesCollapsedStorageKey = "toolz-deliveries-collapsed-projects";
@@ -300,12 +299,12 @@ const menuItems: MenuEntry[] = [
   { id: "calendar", label: "Calendário", icon: CalendarDays }
 ];
 
-const defaultProducts = [
+const buildDefaultProducts = (user: { email: string; name: string }) => [
   {
     id: "product-lxp",
     name: "LXP",
     members: [
-      { id: "member-gabriel", name: "Gabriel Fonseca", email: "gabriel.fonseca@toolzz.me", permission: "Admin" }
+      { id: "member-gabriel", name: user.name, email: user.email, permission: "Admin" }
     ]
   },
   {
@@ -313,14 +312,10 @@ const defaultProducts = [
     name: "Suporte",
     method: "kanban",
     members: [
-      { id: "member-gabriel-suporte", name: "Gabriel Fonseca", email: "gabriel.fonseca@toolzz.me", permission: "Admin" }
+      { id: "member-gabriel-suporte", name: user.name, email: user.email, permission: "Admin" }
     ]
   }
 ] satisfies ProductAccess[];
-
-const localUsers = [
-  { email: "gabriel.fonseca@toolzz.me", password: "Gabr1el=12" }
-];
 
 interface SessionContextValue {
   activeProduct: ProductAccess;
@@ -843,15 +838,11 @@ const defaultRetrospectives = [
   }
 ] satisfies Retrospective[];
 
-export function App() {
-  const [authenticatedEmail, setAuthenticatedEmail] = useState(() => {
-    const storedSession = window.localStorage.getItem(authSessionStorageKey);
-    return storedSession && localUsers.some((user) => user.email === storedSession) ? storedSession : "gabriel.fonseca@toolzz.me";
-  });
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const storedSession = window.localStorage.getItem(authSessionStorageKey);
-    return Boolean(storedSession && localUsers.some((user) => user.email === storedSession));
-  });
+export function App({ user, onLogout }: { user: { email: string; name: string }; onLogout: () => void }) {
+  // O App só é montado pelo AuthGate, com a sessão já confirmada no servidor.
+  const authenticatedEmail = user.email;
+  const isAuthenticated = true;
+  const [defaultProducts] = useState(() => buildDefaultProducts(user));
   const [page, setPage] = useState<Page>("board");
   const [isPageLoading, setIsPageLoading] = useState(false);
 
@@ -952,7 +943,11 @@ export function App() {
 
     const intervalId = window.setInterval(() => {
       fetch(apiUrl("/api/workspace-state"))
-        .then((response) => response.ok ? response.json() : null)
+        .then((response) => {
+          // Sessão expirada: recarrega para voltar à tela de login.
+          if (response.status === 401) window.location.reload();
+          return response.ok ? response.json() : null;
+        })
         .then((state: WorkspaceStateResponse | null) => {
           if (!state?.updatedAt || state.updatedAt === lastWorkspaceUpdatedAt) {
             return;
@@ -1189,14 +1184,6 @@ export function App() {
     updateBacklogItemEstimates({ [order]: estimate });
   }
 
-  if (!isAuthenticated) {
-    return <LoginPage onLogin={(email) => {
-      window.localStorage.setItem(authSessionStorageKey, email);
-      setAuthenticatedEmail(email);
-      setIsAuthenticated(true);
-    }} />;
-  }
-
   if (!activeProduct) {
     return null;
   }
@@ -1209,9 +1196,9 @@ export function App() {
     isAdmin,
     products,
     onLogout: () => {
-      window.localStorage.removeItem(authSessionStorageKey);
-      setIsAuthenticated(false);
-      setPage("board");
+      // Não deixa os dados no navegador depois de sair.
+      window.localStorage.removeItem(workspaceStateStorageKey);
+      onLogout();
     },
     onNavigate: handleNavigate,
     onProductsChange: setProducts,
@@ -1401,74 +1388,8 @@ function getMemberInitials(name?: string) {
   return /^[A-Z]{1,3}$/.test(trimmedName) ? trimmedName : getInitials(trimmedName);
 }
 
-function LoginPage({ onLogin }: { onLogin: (email: string) => void }) {
-  const [mode, setMode] = useState<"login" | "recover">("login");
-  const [email, setEmail] = useState("gabriel.fonseca@toolzz.me");
-  const [password, setPassword] = useState("Gabr1el=12");
-  const [feedback, setFeedback] = useState<{ type: "error" | "success"; message: string } | null>(null);
-
-  function handleSubmit(event: SyntheticEvent) {
-    event.preventDefault();
-    setFeedback(null);
-
-    if (mode === "recover") {
-      const existingUser = localUsers.find((user) => user.email.toLowerCase() === email.trim().toLowerCase());
-      setFeedback({
-        type: existingUser ? "success" : "error",
-        message: existingUser
-          ? `Enviamos as instrucoes de recuperacao para ${existingUser.email}.`
-          : "Nao encontramos uma conta com esse e-mail."
-      });
-      return;
-    }
-
-    const existingUser = localUsers.find((user) => user.email.toLowerCase() === email.trim().toLowerCase() && user.password === password);
-
-    if (!existingUser) {
-      setFeedback({ type: "error", message: "E-mail ou senha incorretos." });
-      return;
-    }
-
-    onLogin(existingUser.email);
-  }
-
-  function toggleLoginMode() {
-    setFeedback(null);
-    setMode(mode === "login" ? "recover" : "login");
-  }
-
-  return (
-    <main className="login-screen">
-      <section className="login-panel">
-        <div className="login-brand">
-          <tna-logo intro style={{ width: 190 }} />
-        </div>
-        <h1>{mode === "login" ? "Entrar na plataforma" : "Recuperar senha"}</h1>
-        <p>{mode === "login" ? "Acesse seus projetos, boards, sprints e cerimonias." : "Informe seu e-mail para receber as instrucoes de redefinicao."}</p>
-        <form onSubmit={handleSubmit}>
-          <label>
-            <span>E-mail</span>
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" />
-          </label>
-          {mode === "login" && (
-            <label>
-              <span>Senha</span>
-              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" />
-            </label>
-          )}
-          {feedback && <div className={`login-feedback ${feedback.type}`}>{feedback.message}</div>}
-          <button className="primary-button" type="submit">{mode === "login" ? "Entrar" : "Enviar recuperacao"}</button>
-        </form>
-        <button className="login-link" type="button" onClick={toggleLoginMode}>
-          {mode === "login" ? "Esqueci minha senha" : "Voltar para login"}
-        </button>
-      </section>
-    </main>
-  );
-}
-
 function PermissionsPage({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: () => void }) {
-  const { products, onProductsChange } = useSession();
+  const { currentMember, products, onProductsChange } = useSession();
   const [selectedProductId, setSelectedProductId] = useState(products[0]?.id ?? "");
   const selectedProduct = products.find((product) => product.id === selectedProductId) ?? products[0];
 
@@ -1477,7 +1398,7 @@ function PermissionsPage({ theme, onToggleTheme }: { theme: Theme; onToggleTheme
       id: `product-${Date.now()}`,
       name: `Novo projeto ${products.length + 1}`,
       method: "sprint",
-      members: [{ id: `member-${Date.now()}`, name: "Amanda Silva", email: "amanda@toolz.me", permission: "Admin" }]
+      members: [{ id: `member-${Date.now()}`, name: currentMember?.name ?? "Admin", email: currentMember?.email ?? "", permission: "Admin" }]
     };
     onProductsChange([...products, product]);
     setSelectedProductId(product.id);

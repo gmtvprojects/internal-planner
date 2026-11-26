@@ -158,7 +158,7 @@ export function isLinearWebhookAuthorized(headers: Record<string, string | strin
   const expectedSecret = getIntegrationSettings().linearWebhookSecret || process.env.N8N_WEBHOOK_SECRET;
 
   if (!expectedSecret) {
-    return true;
+    return false;
   }
 
   return headers["x-toolz-secret"] === expectedSecret || headers["x-linear-signature"] === expectedSecret;
