@@ -60,6 +60,7 @@ import type { BacklogEntry, BacklogEpic, BacklogItem, BacklogPriority } from "./
 import { applyCreatedIssueLink, archiveIssue, createEpic, createIssue, toCreateEpicPayload, updateIssue } from "./services/backlog";
 import type { UpdateIssueResult } from "./services/backlog";
 import { RadialMenu } from "./RadialMenu";
+import { ChangePasswordModal } from "./auth/ChangePasswordModal";
 import { apiUrl } from "./services/api";
 import { getDashboard } from "./services/dashboard";
 import { mockDashboard } from "./services/mockDashboard";
@@ -7901,6 +7902,7 @@ function Topbar({
   onToggleTheme: () => void;
 }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const { activeProductId, currentMember, currentPermission, isAdmin, onLogout, onNavigate, onProductChange, products } = useSession();
   const profileInitials = getInitials(currentMember?.name);
 
@@ -7923,6 +7925,7 @@ function Topbar({
           <span className="avatar">{profileInitials}</span>
           <ChevronDown size={18} />
         </button>
+        {isChangingPassword && <ChangePasswordModal onClose={() => setIsChangingPassword(false)} />}
         {isProfileOpen && (
           <div className="profile-menu">
             <label>
@@ -7940,6 +7943,9 @@ function Topbar({
                 Projetos
               </button>
             )}
+            <button type="button" onClick={() => { setIsChangingPassword(true); setIsProfileOpen(false); }}>
+              Trocar senha
+            </button>
             <button className="profile-logout" type="button" onClick={onLogout}>Logout</button>
           </div>
         )}

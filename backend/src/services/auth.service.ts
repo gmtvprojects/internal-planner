@@ -51,6 +51,19 @@ export async function logout(token: string) {
   await prisma.session.deleteMany({ where: { tokenHash: hashToken(token) } });
 }
 
+/** Troca a senha e encerra as outras sessões do usuário. Devolve false se a senha atual estiver errada. */
+export async function changePassword(token: string, currentPassword: string, newPassword: string) {
+  const tokenHash = hashToken(token);
+  const session = await prisma.session.findUnique({ where: { tokenHash }, include: { user: true } });
+  if (!session || !(await verifyPassword(currentPassword, session.user.passwordHash))) return false;
+
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: session.userId }, data: { passwordHash: await hashPassword(newPassword) } }),
+    prisma.session.deleteMany({ where: { userId: session.userId, tokenHash: { not: tokenHash } } })
+  ]);
+  return true;
+}
+
 /** Cria o primeiro usuário a partir de ADMIN_EMAIL e ADMIN_PASSWORD, apenas se não houver nenhum. */
 export async function ensureInitialUser() {
   if ((await prisma.user.count()) > 0) return;
